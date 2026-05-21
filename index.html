@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Inglés Inmersivo</title>
+    <title>Políglota Inmersivo</title>
     <style>
         :root {
             --primary: #4A90E2;
@@ -33,10 +33,31 @@
             background: white;
             box-shadow: 0 2px 10px rgba(0,0,0,0.05);
             z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
         }
         
         header h1 { margin: 0; font-size: 1.4rem; color: var(--dark); }
-        .status-badge { display: inline-block; margin-top: 5px; padding: 4px 12px; background: #E8F8F5; color: #16A085; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
+        
+        /* Estilo para el nuevo selector de idiomas */
+        .module-selector {
+            padding: 8px 15px;
+            font-size: 1rem;
+            border-radius: 12px;
+            border: 2px solid var(--primary);
+            background: #f8fbff;
+            color: var(--dark);
+            font-weight: bold;
+            outline: none;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            max-width: 250px;
+            width: 100%;
+        }
+
+        .status-badge { display: inline-block; padding: 4px 12px; background: #E8F8F5; color: #16A085; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
 
         .main-area { 
             flex-grow: 1; 
@@ -150,7 +171,8 @@
 <body>
 
     <header>
-        <h1>Práctica con el Teacher Charly desde Canada</h1>
+        <h1>Modo Políglota</h1>
+        <select id="moduleSelector" class="module-selector" onchange="cambiarModulo()" style="display: none;"></select>
         <div class="status-badge" id="statusBadge">Conectando...</div>
     </header>
 
@@ -161,7 +183,7 @@
         <div class="flashcard-container" id="cardContainer" style="display: none;" onclick="flipCard()">
             <div class="flashcard" id="flashcard">
                 <div class="card-face card-front">
-                    <div class="phrase-text" id="englishText"></div>
+                    <div class="phrase-text" id="foreignText"></div>
                     <div class="pronunciation-text" id="pronunciationText"></div>
                     <button class="play-audio-btn" onclick="repetirAudioManual(event)" title="Escuchar pronunciación">🔊</button>
                     <div class="hint-text">Toca para traducir</div>
@@ -185,49 +207,75 @@
     </div>
 
     <script>
-        // Tu URL de Google Sheets
+        // Tu URL de Google Sheets sigue siendo la misma
         const URL_GOOGLE_SHEET = "https://script.google.com/macros/s/AKfycbyQRNdJyPbK5LTayF4i1upuh2Xr5kUF9gxa10NW9GRer_m8lxDbk9xnMP3YdoV_JFgN/exec"; 
         
-        // --- AJUSTES DE VELOCIDAD ---
-        const VELOCIDAD_INGLES = 0.65; // Más lento y pausado (antes era 0.85)
+        const VELOCIDAD_IDIOMA = 0.65; 
         const VELOCIDAD_ESPANOL = 1.0; 
-        // ----------------------------
 
-        let baseDatos = [];
+        // Diccionario para asignar el idioma de voz según el nombre de tu pestaña
+        const codigosVoz = {
+            "ORACIONES INGLES": "en-US",
+            "INGLES": "en-US",
+            "FRANCES": "fr-FR",
+            "ITALIANO": "it-IT",
+            "MANDARIN": "zh-CN",
+            "JAPONES": "ja-JP",
+            "ALEMAN": "de-DE"
+        };
+
+        let todosLosDatos = []; // Aquí se guarda todo
+        let baseDatos = [];     // Aquí se guardan solo las del idioma seleccionado
         let indiceActual = 0;
         let isAutoPlaying = false;
         let cancelSequence = false; 
         let wakeLock = null; 
+        let idiomaVozActual = "en-US"; // Por defecto
 
         const flashcard = document.getElementById('flashcard');
-        const englishText = document.getElementById('englishText');
+        const foreignText = document.getElementById('foreignText');
         const pronunciationText = document.getElementById('pronunciationText');
         const spanishText = document.getElementById('spanishText');
         const progressText = document.getElementById('progressText');
         const statusBadge = document.getElementById('statusBadge');
+        const moduleSelector = document.getElementById('moduleSelector');
         const btnAuto = document.getElementById('btnAuto');
         const autoIcon = document.getElementById('autoIcon');
         const autoText = document.getElementById('autoText');
 
-        // 1. Cargar Datos a prueba de errores
+        // 1. Cargar Datos y llenar Selector
         async function cargarDatosDesdeDrive() {
             try {
                 const respuesta = await fetch(URL_GOOGLE_SHEET, { redirect: "follow" });
                 const textoRespuesta = await respuesta.text();
                 
                 try {
-                    baseDatos = JSON.parse(textoRespuesta);
+                    todosLosDatos = JSON.parse(textoRespuesta);
                 } catch (e) {
                     throw new Error("El servidor no devolvió datos válidos.");
                 }
                 
-                if(baseDatos && baseDatos.length > 0) {
+                if(todosLosDatos && todosLosDatos.length > 0) {
                     document.getElementById('loadingSpinner').style.display = 'none';
                     document.getElementById('cardContainer').style.display = 'block';
                     document.getElementById('controlsContainer').style.display = 'flex';
-                    progressText.style.display = 'block';
+                    
+                    // Extraer los nombres de las pestañas (Módulos) únicos
+                    const modulosUnicos = [...new Set(todosLosDatos.map(item => item.modulo))];
+                    
+                    // Llenar el menú desplegable
+                    modulosUnicos.forEach(mod => {
+                        let opcion = document.createElement('option');
+                        opcion.value = mod;
+                        opcion.textContent = mod;
+                        moduleSelector.appendChild(opcion);
+                    });
+                    
+                    moduleSelector.style.display = 'block';
                     statusBadge.textContent = "Sincronizado 🟢";
-                    actualizarTextosUI();
+                    progressText.style.display = 'block';
+                    
+                    cambiarModulo(); // Cargar el primer idioma
                 } else {
                     statusBadge.textContent = "Base Vacía 🟡";
                     progressText.textContent = "Tu hoja de cálculo está vacía.";
@@ -240,7 +288,24 @@
             }
         }
 
-        // 2. Motor de Voz (Promesa)
+        // Función que se ejecuta cuando cambias el menú de idioma
+        function cambiarModulo() {
+            if (isAutoPlaying) toggleAutoPlay(); 
+            
+            const moduloSeleccionado = moduleSelector.value;
+            
+            // Determinar qué acento de voz usar
+            const nombreNormalizado = moduloSeleccionado.toUpperCase().trim();
+            idiomaVozActual = codigosVoz[nombreNormalizado] || "en-US";
+            
+            // Filtrar las tarjetas
+            baseDatos = todosLosDatos.filter(item => item.modulo === moduloSeleccionado);
+            indiceActual = 0;
+            
+            actualizarTextosUI();
+        }
+
+        // 2. Motor de Voz 
         function hablarTexto(texto, idioma, velocidad) {
             return new Promise(resolve => {
                 if (!('speechSynthesis' in window)) return resolve();
@@ -253,60 +318,53 @@
             });
         }
 
-        // 3. Secuencia Automática: 1x EN -> 1x ES -> 2x EN
-        async function reproducirSecuenciaAuto(enText, esText) {
+        // 3. Secuencia Automática: 1x Extranjero -> 1x Español -> 2x Extranjero
+        async function reproducirSecuenciaAuto(fraseExtranjera, esText) {
             cancelSequence = true; 
             window.speechSynthesis.cancel();
             await new Promise(r => setTimeout(r, 100)); 
             cancelSequence = false;
 
             if (flashcard.classList.contains('flipped')) {
-                flashcard.classList.remove('flipped');tica
+                flashcard.classList.remove('flipped');
                 await new Promise(r => setTimeout(r, 400)); 
             }
 
-            // 1 vez en Inglés (Lento)
             if (cancelSequence) return; 
-            await hablarTexto(enText, 'en-US', VELOCIDAD_INGLES); 
-            await new Promise(r => setTimeout(r, 1000)); // Pausa más larga
+            await hablarTexto(fraseExtranjera, idiomaVozActual, VELOCIDAD_IDIOMA); 
+            await new Promise(r => setTimeout(r, 1000)); 
 
-            // Girar a Español
             if (!cancelSequence) {
                 flashcard.classList.add('flipped');
                 await new Promise(r => setTimeout(r, 500)); 
             }
 
-            // 1 vez en Español
             if (cancelSequence) return;
             await hablarTexto(esText, 'es-ES', VELOCIDAD_ESPANOL); 
-            await new Promise(r => setTimeout(r, 1000)); // Pausa más larga
+            await new Promise(r => setTimeout(r, 1000)); 
 
-            // Girar de regreso a Inglés
             if (!cancelSequence) {
                 flashcard.classList.remove('flipped');
                 await new Promise(r => setTimeout(r, 500)); 
             }
 
-            // 2 veces en Inglés (Lento)
             for (let i = 0; i < 2; i++) {
                 if (cancelSequence) return; 
-                await hablarTexto(enText, 'en-US', VELOCIDAD_INGLES); 
+                await hablarTexto(fraseExtranjera, idiomaVozActual, VELOCIDAD_IDIOMA); 
                 if (cancelSequence) return;
-                await new Promise(r => setTimeout(r, 1200)); // Pausa bien marcada entre repeticiones
+                await new Promise(r => setTimeout(r, 1200)); 
             }
         }
 
-        // 4. Control Manual (Botón de Altavoz)
+        // 4. Control Manual
         async function repetirAudioManual(evento) {
             if(evento) evento.stopPropagation(); 
-            // Detener cualquier audio que esté sonando
             cancelSequence = true;
             window.speechSynthesis.cancel();
             await new Promise(r => setTimeout(r, 50)); 
             cancelSequence = false;
             
-            // Hablar 1 sola vez de inmediato, con velocidad pausada
-            hablarTexto(baseDatos[indiceActual].en, 'en-US', VELOCIDAD_INGLES);
+            hablarTexto(baseDatos[indiceActual].frase, idiomaVozActual, VELOCIDAD_IDIOMA);
         }
 
         function flipCard() {
@@ -316,10 +374,10 @@
         function actualizarTextosUI() {
             if(!baseDatos[indiceActual]) return;
             
-            const frase = baseDatos[indiceActual];
-            englishText.textContent = frase.en;
-            pronunciationText.textContent = frase.pron;
-            spanishText.textContent = frase.es;
+            const item = baseDatos[indiceActual];
+            foreignText.textContent = item.frase;
+            pronunciationText.textContent = item.pron;
+            spanishText.textContent = item.es;
             progressText.textContent = `${indiceActual + 1} de ${baseDatos.length}`;
             
             if (flashcard.classList.contains('flipped')) {
@@ -327,7 +385,6 @@
             }
         }
 
-        // Lógica de navegación manual: Siguiente, Atrás, Aleatorio
         function cambiarFraseManual() {
             if (isAutoPlaying) toggleAutoPlay(); 
             actualizarTextosUI();
@@ -357,12 +414,14 @@
                 btnAuto.classList.add('active');
                 autoIcon.textContent = "⏹️";
                 autoText.textContent = "Detener Auto";
+                moduleSelector.disabled = true; // Desactivar cambio de idioma mientras suena
                 gestionarWakeLock(true); 
                 iniciarBucleAutoPlay();
             } else {
                 btnAuto.classList.remove('active');
                 autoIcon.textContent = "▶️";
                 autoText.textContent = "Modo Automático";
+                moduleSelector.disabled = false;
                 cancelSequence = true;
                 window.speechSynthesis.cancel();
                 gestionarWakeLock(false); 
@@ -373,13 +432,12 @@
             while (isAutoPlaying) {
                 indiceActual = Math.floor(Math.random() * baseDatos.length);
                 actualizarTextosUI();
-                await reproducirSecuenciaAuto(baseDatos[indiceActual].en, baseDatos[indiceActual].es);
+                await reproducirSecuenciaAuto(baseDatos[indiceActual].frase, baseDatos[indiceActual].es);
                 if (!isAutoPlaying) break;
                 await new Promise(r => setTimeout(r, 2000)); 
             }
         }
 
-        // Mantener la pantalla encendida en móviles
         async function gestionarWakeLock(activar) {
             try {
                 if (activar && 'wakeLock' in navigator) {
@@ -393,7 +451,6 @@
             }
         }
 
-        // Teclado
         document.addEventListener('keydown', function(event) {
             if (event.code === 'Space') {
                 event.preventDefault(); 
